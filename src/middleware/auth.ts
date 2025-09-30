@@ -1,0 +1,90 @@
+import jwt from 'jsonwebtoken';
+import admin from 'firebase-admin';
+import { Request, Response, NextFunction } from 'express';
+import type { AuthRequest, User } from '../types';
+
+// Initialize Firebase Admin SDK
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    }),
+  });
+}
+
+export const authenticate = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '');
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        error: 'Access denied. No token provided.',
+      });
+    }
+
+    // Verify Firebase token
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    
+    // Get user from Firebase
+    const userRecord = await admin.auth().getUser(decodedToken.uid);
+    
+    // Attach user to request
+    req.user = {
+      id: userRecord.uid,
+      email: userRecord.email || '',
+      firstName: userRecord.displayName?.split(' ')[0] || '',
+      lastName: userRecord.displayName?.split(' ')[1] || '',
+      class: 6, // Default class, should be fetched from database
+      isEmailVerified: userRecord.emailVerified,
+      subscriptionStatus: 'trial', // Default status, should be fetched from database
+      createdAt: new Date(userRecord.metadata.creationTime),
+      updatedAt: new Date(userRecord.metadata.lastSignInTime || userRecord.metadata.creationTime),
+    } as User;
+
+    next();
+  } catch (error) {
+    console.error('Authentication error:', error);
+    res.status(401).json({
+      success: false,
+      error: 'Invalid token.',
+    });
+  }
+};
+
+export const requireSubscription = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'User not authenticated.',
+    });
+  }
+
+  // Check if user has active subscription or is in trial period
+  const { subscriptionStatus, trialEndDate } = req.user;
+  
+  if (subscriptionStatus === 'active') {
+    return next();
+  }
+  
+  if (subscriptionStatus === 'trial' && trialEndDate && new Date() < trialEndDate) {
+    return next();
+  }
+
+  return res.status(403).json({
+    success: false,
+    error: 'Active subscription required to access this content.',
+    subscriptionRequired: true,
+  });
+};

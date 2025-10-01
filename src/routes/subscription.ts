@@ -5,6 +5,14 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import { subscriptionPlans } from '../data/sample-data';
 import { authenticate } from '../middleware/auth';
+import { db } from '../index';
+import {
+  COLLECTIONS,
+  createPaymentDocument,
+  createSubscriptionHistoryDocument,
+  PaymentDocument,
+  SubscriptionHistoryDocument
+} from '../types/firestore';
 import type { AuthRequest } from '../types';
 
 const router = Router();
@@ -22,7 +30,7 @@ router.get('/plans', async (req: Request, res: Response) => {
       success: true,
       data: {
         plans: subscriptionPlans,
-        trialDuration: '3 days',
+        trialDuration: '7 days',
         currency: 'INR'
       }
     });
@@ -129,14 +137,42 @@ router.post('/verify-payment', authenticate, async (req: AuthRequest, res: Respo
           break;
       }
 
-      // Update Firebase custom claims
-      await admin.auth().setCustomUserClaims(user.id, {
-        class: user.class,
-        subscriptionStatus: 'active',
-        subscriptionPlan: plan.id,
-        subscriptionStartDate: now.toISOString(),
-        subscriptionEndDate: endDate.toISOString(),
-      });
+      if (db) {
+        // Create payment record
+        const paymentData = createPaymentDocument({
+          userId: user.id,
+          razorpayOrderId: razorpay_order_id,
+          razorpayPaymentId: razorpay_payment_id,
+          razorpaySignature: razorpay_signature,
+          planId: plan.id as 'monthly' | 'quarterly' | 'yearly',
+          amount: plan.price,
+          currency: 'INR',
+          status: 'completed',
+        });
+
+        await db.collection(COLLECTIONS.PAYMENTS).doc(paymentData.id).set(paymentData);
+
+        // Update user subscription status
+        await db.collection(COLLECTIONS.USERS).doc(user.id).update({
+          subscriptionStatus: 'active',
+          subscriptionPlan: plan.id,
+          subscriptionStartDate: now.toISOString(),
+          subscriptionEndDate: endDate.toISOString(),
+          updatedAt: now.toISOString(),
+        });
+
+        // Create subscription history entry
+        const subscriptionHistoryData = createSubscriptionHistoryDocument({
+          userId: user.id,
+          planId: plan.id as 'monthly' | 'quarterly' | 'yearly',
+          status: 'active',
+          startDate: now.toISOString(),
+          endDate: endDate.toISOString(),
+          paymentId: paymentData.id,
+        });
+
+        await db.collection(COLLECTIONS.SUBSCRIPTION_HISTORY).add(subscriptionHistoryData);
+      }
 
       res.json({
         success: true,

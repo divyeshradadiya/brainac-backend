@@ -2,6 +2,15 @@ import { Router } from 'express';
 import admin from 'firebase-admin';
 import { Request, Response } from 'express';
 import { authenticate } from '../middleware/auth';
+import { db } from '../index';
+import {
+  UserDocument,
+  PaymentDocument,
+  SubscriptionHistoryDocument,
+  COLLECTIONS,
+  createUserDocument,
+  createSubscriptionHistoryDocument
+} from '../types/firestore';
 import type { AuthRequest } from '../types';
 
 const router = Router();
@@ -19,10 +28,10 @@ router.post('/register', async (req: Request, res: Response) => {
       });
     }
 
-    if (userClass < 5 || userClass > 10) {
+    if (userClass < 6 || userClass > 10) {
       return res.status(400).json({
         success: false,
-        error: 'Class must be between 5 and 10',
+        error: 'Class must be between 6 and 10',
       });
     }
 
@@ -40,7 +49,7 @@ router.post('/register', async (req: Request, res: Response) => {
       }
     }
 
-    // Create user in Firebase
+    // Create user in Firebase Auth
     const userRecord = await admin.auth().createUser({
       email,
       password,
@@ -48,17 +57,31 @@ router.post('/register', async (req: Request, res: Response) => {
       emailVerified: false,
     });
 
-    // Set custom claims for user class and subscription
-    await admin.auth().setCustomUserClaims(userRecord.uid, {
-      class: userClass,
-      subscriptionStatus: 'trial',
-      trialStartDate: new Date().toISOString(),
-      trialEndDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days trial
+    // Create user document in Firestore
+    const userDocData = createUserDocument({
+      uid: userRecord.uid,
+      email: userRecord.email!,
       firstName,
-      lastName
+      lastName,
+      class: userClass,
     });
 
-    // Create custom token for frontend
+    if (db) {
+      await db.collection(COLLECTIONS.USERS).doc(userRecord.uid).set(userDocData);
+
+      // Create initial subscription history entry
+      const subscriptionHistoryData = createSubscriptionHistoryDocument({
+        userId: userRecord.uid,
+        planId: 'monthly', // default, will be trial
+        status: 'trial',
+        startDate: userDocData.trialStartDate,
+        endDate: userDocData.trialEndDate,
+      });
+
+      await db.collection(COLLECTIONS.SUBSCRIPTION_HISTORY).add(subscriptionHistoryData);
+    }
+
+    // Create custom token for frontend (keeping this for backward compatibility)
     const customToken = await admin.auth().createCustomToken(userRecord.uid);
 
     res.status(201).json({
@@ -67,9 +90,9 @@ router.post('/register', async (req: Request, res: Response) => {
         uid: userRecord.uid,
         email: userRecord.email,
         displayName: userRecord.displayName,
-        class: userClass,
-        subscriptionStatus: 'trial',
-        trialEndDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+        class: userDocData.class,
+        subscriptionStatus: userDocData.subscriptionStatus,
+        trialEndDate: userDocData.trialEndDate,
         customToken: customToken
       },
       message: 'User registered successfully',
@@ -113,18 +136,35 @@ router.post('/login', async (req: Request, res: Response) => {
     // Create custom token for authentication
     const customToken = await admin.auth().createCustomToken(userRecord.uid);
 
-    // Get user custom claims
+    // Get user data from Firestore
+    let userData: UserDocument | null = null;
+    if (db) {
+      const userDoc = await db.collection(COLLECTIONS.USERS).doc(userRecord.uid).get();
+      if (userDoc.exists) {
+        userData = userDoc.data() as UserDocument;
+      }
+    }
+
+    // Fallback to custom claims if Firestore data not found (for migration)
     const userClaims = userRecord.customClaims || {};
+    const finalUserData = userData || {
+      uid: userRecord.uid,
+      email: userRecord.email!,
+      displayName: userRecord.displayName!,
+      class: userClaims.class || 5,
+      subscriptionStatus: userClaims.subscriptionStatus || 'trial',
+      trialEndDate: userClaims.trialEndDate,
+    };
 
     res.status(200).json({
       success: true,
       data: {
-        uid: userRecord.uid,
-        email: userRecord.email,
-        displayName: userRecord.displayName,
-        class: userClaims.class || 5,
-        subscriptionStatus: userClaims.subscriptionStatus || 'trial',
-        trialEndDate: userClaims.trialEndDate,
+        uid: finalUserData.uid,
+        email: finalUserData.email,
+        displayName: finalUserData.displayName,
+        class: finalUserData.class,
+        subscriptionStatus: finalUserData.subscriptionStatus,
+        trialEndDate: finalUserData.trialEndDate,
         customToken: customToken
       },
       message: 'Login successful',
@@ -186,24 +226,33 @@ router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => 
 
     const { firstName, lastName, class: userClass } = req.body;
 
-    const updateData: any = {};
+    const updateData: Partial<UserDocument> = {
+      updatedAt: new Date().toISOString(),
+    };
     
-    if (firstName && lastName) {
-      updateData.displayName = `${firstName} ${lastName}`;
+    if (firstName) updateData.firstName = firstName;
+    if (lastName) updateData.lastName = lastName;
+    if (firstName || lastName) {
+      updateData.displayName = `${firstName || user.firstName} ${lastName || user.lastName}`;
     }
-
     if (userClass && userClass >= 5 && userClass <= 10) {
-      // Update custom claims
-      await admin.auth().setCustomUserClaims(user.id, {
-        class: userClass,
-        subscriptionStatus: user.subscriptionStatus,
-        trialStartDate: user.trialStartDate,
-        trialEndDate: user.trialEndDate,
-      });
+      updateData.class = userClass;
     }
 
-    if (Object.keys(updateData).length > 0) {
-      await admin.auth().updateUser(user.id, updateData);
+    // Update user document in Firestore
+    if (db && Object.keys(updateData).length > 0) {
+      await db.collection(COLLECTIONS.USERS).doc(user.id).update(updateData);
+    }
+
+    // Also update Firebase Auth display name if name changed
+    if ((firstName || lastName) && db) {
+      const userDoc = await db.collection(COLLECTIONS.USERS).doc(user.id).get();
+      if (userDoc.exists) {
+        const currentData = userDoc.data() as UserDocument;
+        await admin.auth().updateUser(user.id, {
+          displayName: currentData.displayName,
+        });
+      }
     }
 
     res.status(200).json({

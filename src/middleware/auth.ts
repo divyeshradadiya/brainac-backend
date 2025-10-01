@@ -1,6 +1,8 @@
 import jwt from 'jsonwebtoken';
 import admin from 'firebase-admin';
 import { Request, Response, NextFunction } from 'express';
+import { db } from '../index';
+import { COLLECTIONS, UserDocument } from '../types/firestore';
 import type { AuthRequest, User } from '../types';
 
 // Firebase Admin SDK is initialized in index.ts
@@ -21,33 +23,80 @@ export const authenticate = async (
       });
     }
 
-    // Verify Firebase token
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    let decodedToken: any;
+    let userRecord: any;
+
+    try {
+      // First try to verify as ID token
+      decodedToken = await admin.auth().verifyIdToken(token);
+      userRecord = await admin.auth().getUser(decodedToken.uid);
+    } catch (idTokenError) {
+      // If ID token verification fails, try to decode as custom token
+      // Custom tokens are JWT tokens signed by our service account
+      try {
+        // Verify the custom token by checking if it's a valid JWT
+        const decoded = jwt.decode(token, { complete: true });
+        
+        if (!decoded || typeof decoded === 'string') {
+          throw new Error('Invalid token format');
+        }
+
+        // Check if the token was issued by our service account
+        const payload = decoded.payload as any;
+        
+        if (!payload.uid) {
+          throw new Error('Token missing uid claim');
+        }
+
+        // Get user record from Firebase Auth using the uid from the token
+        userRecord = await admin.auth().getUser(payload.uid);
+        decodedToken = { uid: payload.uid };
+        
+      } catch (customTokenError) {
+        console.error('Token verification failed:', {
+          idTokenError: idTokenError instanceof Error ? idTokenError.message : 'ID token verification failed',
+          customTokenError: customTokenError instanceof Error ? customTokenError.message : 'Custom token verification failed'
+        });
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid token.',
+        });
+      }
+    }
     
-    // Get user from Firebase
-    const userRecord = await admin.auth().getUser(decodedToken.uid);
-    
-    // Extract custom claims
-    const customClaims = decodedToken.firebase?.sign_in_provider 
-      ? decodedToken  // Custom claims are in the token
-      : (userRecord.customClaims || {}); // Fallback to user record claims
-    
-    // Parse displayName to get first and last name
-    const nameParts = userRecord.displayName?.split(' ') || [];
-    const firstName = customClaims.firstName || nameParts[0] || '';
-    const lastName = customClaims.lastName || nameParts.slice(1).join(' ') || '';
+    // Get user data from Firestore
+    let userData: UserDocument | null = null;
+    if (db) {
+      const userDoc = await db.collection(COLLECTIONS.USERS).doc(decodedToken.uid).get();
+      if (userDoc.exists) {
+        userData = userDoc.data() as UserDocument;
+      }
+    }
+
+    // Fallback to custom claims if Firestore data not found (for migration)
+    const customClaims = userRecord.customClaims || {};
+    const finalUserData = userData || {
+      uid: userRecord.uid,
+      email: userRecord.email || '',
+      firstName: customClaims.firstName || userRecord.displayName?.split(' ')[0] || '',
+      lastName: customClaims.lastName || userRecord.displayName?.split(' ').slice(1).join(' ') || '',
+      class: customClaims.class || 6,
+      subscriptionStatus: customClaims.subscriptionStatus || 'trial',
+      trialEndDate: customClaims.trialEndDate,
+      subscriptionEndDate: customClaims.subscriptionEndDate,
+    };
     
     // Attach user to request
     req.user = {
-      id: userRecord.uid,
-      email: userRecord.email || '',
-      firstName,
-      lastName,
-      class: customClaims.class || 6, // From custom claims or default
+      id: finalUserData.uid,
+      email: finalUserData.email,
+      firstName: finalUserData.firstName,
+      lastName: finalUserData.lastName,
+      class: finalUserData.class,
       isEmailVerified: userRecord.emailVerified,
-      subscriptionStatus: customClaims.subscriptionStatus || 'trial',
-      trialEndDate: customClaims.trialEndDate ? new Date(customClaims.trialEndDate) : undefined,
-      subscriptionEndDate: customClaims.subscriptionEndDate ? new Date(customClaims.subscriptionEndDate) : undefined,
+      subscriptionStatus: finalUserData.subscriptionStatus,
+      trialEndDate: finalUserData.trialEndDate ? new Date(finalUserData.trialEndDate) : undefined,
+      subscriptionEndDate: finalUserData.subscriptionEndDate ? new Date(finalUserData.subscriptionEndDate) : undefined,
       createdAt: new Date(userRecord.metadata.creationTime),
       updatedAt: new Date(userRecord.metadata.lastSignInTime || userRecord.metadata.creationTime),
     } as User;

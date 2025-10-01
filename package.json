@@ -11,7 +11,9 @@
     "clean": "rimraf dist",
     "prebuild": "npm run clean",
     "lint": "eslint src/**/*.ts",
-    "test": "jest"
+    "test": "jest",
+    "migrate": "tsx src/scripts/migrate-users.ts",
+    "populate-subjects": "tsx src/scripts/populate-subjects.ts"
   },
   "keywords": ["education", "api", "firebase", "razorpay"],
   "author": "Brainac Team",

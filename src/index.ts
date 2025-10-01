@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
 import morgan from 'morgan';
 
 // Import routes
@@ -12,6 +13,8 @@ import subscriptionRoutes from './routes/subscription';
 dotenv.config();
 
 // Initialize Firebase Admin SDK with error handling
+let db: admin.firestore.Firestore | null = null;
+
 try {
   const serviceAccount = {
     type: 'service_account',
@@ -30,9 +33,13 @@ try {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
     });
-    console.log('✅ Firebase Admin SDK initialized successfully');
+    
+    // Initialize Firestore
+    db = getFirestore();
+    db.settings({ ignoreUndefinedProperties: true });
+    console.log('✅ Firebase Admin SDK and Firestore initialized successfully');
   } else {
-    console.log('⚠️  Firebase Admin SDK not initialized - using development mode');
+    console.log('⚠️  Firebase Admin SDK and Firestore not initialized - using development mode');
     console.log('   To enable Firebase features, set proper Firebase credentials in .env file');
   }
 } catch (error) {
@@ -40,16 +47,24 @@ try {
   console.log('   Running in development mode without Firebase');
 }
 
+// Export Firestore instance for use in routes
+export { db };
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: [
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    'http://localhost:8080',
+    'http://localhost:8081',
+    'http://localhost:3000'
+  ],
   credentials: true
 }));
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true }));  
 
 // HTTP request logging with Morgan
 app.use(morgan('combined'));

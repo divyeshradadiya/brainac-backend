@@ -6,7 +6,7 @@ import type { AuthRequest } from '../types';
 
 const router = Router();
 
-// Register/Login with Firebase
+// Register user - backend handles Firebase user creation
 router.post('/register', async (req: Request, res: Response) => {
   try {
     const { email, password, firstName, lastName, class: userClass } = req.body;
@@ -26,6 +26,20 @@ router.post('/register', async (req: Request, res: Response) => {
       });
     }
 
+    // Check if user already exists
+    try {
+      await admin.auth().getUserByEmail(email);
+      return res.status(400).json({
+        success: false,
+        error: 'User already exists with this email',
+      });
+    } catch (error: any) {
+      // User doesn't exist, which is what we want for registration
+      if (error.code !== 'auth/user-not-found') {
+        throw error;
+      }
+    }
+
     // Create user in Firebase
     const userRecord = await admin.auth().createUser({
       email,
@@ -40,7 +54,12 @@ router.post('/register', async (req: Request, res: Response) => {
       subscriptionStatus: 'trial',
       trialStartDate: new Date().toISOString(),
       trialEndDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days trial
+      firstName,
+      lastName
     });
+
+    // Create custom token for frontend
+    const customToken = await admin.auth().createCustomToken(userRecord.uid);
 
     res.status(201).json({
       success: true,
@@ -51,6 +70,7 @@ router.post('/register', async (req: Request, res: Response) => {
         class: userClass,
         subscriptionStatus: 'trial',
         trialEndDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+        customToken: customToken
       },
       message: 'User registered successfully',
     });
@@ -59,6 +79,61 @@ router.post('/register', async (req: Request, res: Response) => {
     res.status(400).json({
       success: false,
       error: error.message || 'Registration failed',
+    });
+  }
+});
+
+// Login user - backend handles Firebase authentication
+router.post('/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email and password are required',
+      });
+    }
+
+    // Get user by email to verify existence
+    let userRecord;
+    try {
+      userRecord = await admin.auth().getUserByEmail(email);
+    } catch (error: any) {
+      if (error.code === 'auth/user-not-found') {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid email or password',
+        });
+      }
+      throw error;
+    }
+
+    // Create custom token for authentication
+    const customToken = await admin.auth().createCustomToken(userRecord.uid);
+
+    // Get user custom claims
+    const userClaims = userRecord.customClaims || {};
+
+    res.status(200).json({
+      success: true,
+      data: {
+        uid: userRecord.uid,
+        email: userRecord.email,
+        displayName: userRecord.displayName,
+        class: userClaims.class || 5,
+        subscriptionStatus: userClaims.subscriptionStatus || 'trial',
+        trialEndDate: userClaims.trialEndDate,
+        customToken: customToken
+      },
+      message: 'Login successful',
+    });
+  } catch (error: any) {
+    console.error('Login error:', error);
+    res.status(401).json({
+      success: false,
+      error: error.message || 'Login failed',
     });
   }
 });

@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import admin from 'firebase-admin';
+import morgan from 'morgan';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -14,7 +15,7 @@ dotenv.config();
 try {
   const serviceAccount = {
     type: 'service_account',
-    project_id: process.env.FIREBASE_PROJECT_ID || 'brainac-auth',
+    project_id: process.env.FIREBASE_PROJECT_ID || 'test-project-aba20',
     private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID || '',
     private_key: (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
     client_email: process.env.FIREBASE_CLIENT_EMAIL || '',
@@ -49,6 +50,9 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// HTTP request logging with Morgan
+app.use(morgan('combined'));
 
 // Request logging middleware
 app.use((req, res, next) => {

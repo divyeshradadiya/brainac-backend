@@ -12,6 +12,7 @@ export interface User {
   subscriptionStatus: 'trial' | 'active' | 'expired';
   trialStartDate?: Date;
   trialEndDate?: Date;
+  subscriptionEndDate?: Date;
   createdAt: Date;
   updatedAt: Date;
 }

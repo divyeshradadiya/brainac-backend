@@ -27,15 +27,27 @@ export const authenticate = async (
     // Get user from Firebase
     const userRecord = await admin.auth().getUser(decodedToken.uid);
     
+    // Extract custom claims
+    const customClaims = decodedToken.firebase?.sign_in_provider 
+      ? decodedToken  // Custom claims are in the token
+      : (userRecord.customClaims || {}); // Fallback to user record claims
+    
+    // Parse displayName to get first and last name
+    const nameParts = userRecord.displayName?.split(' ') || [];
+    const firstName = customClaims.firstName || nameParts[0] || '';
+    const lastName = customClaims.lastName || nameParts.slice(1).join(' ') || '';
+    
     // Attach user to request
     req.user = {
       id: userRecord.uid,
       email: userRecord.email || '',
-      firstName: userRecord.displayName?.split(' ')[0] || '',
-      lastName: userRecord.displayName?.split(' ')[1] || '',
-      class: 6, // Default class, should be fetched from database
+      firstName,
+      lastName,
+      class: customClaims.class || 6, // From custom claims or default
       isEmailVerified: userRecord.emailVerified,
-      subscriptionStatus: 'trial', // Default status, should be fetched from database
+      subscriptionStatus: customClaims.subscriptionStatus || 'trial',
+      trialEndDate: customClaims.trialEndDate ? new Date(customClaims.trialEndDate) : undefined,
+      subscriptionEndDate: customClaims.subscriptionEndDate ? new Date(customClaims.subscriptionEndDate) : undefined,
       createdAt: new Date(userRecord.metadata.creationTime),
       updatedAt: new Date(userRecord.metadata.lastSignInTime || userRecord.metadata.creationTime),
     } as User;

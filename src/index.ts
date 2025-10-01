@@ -25,7 +25,7 @@ try {
     client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL || '',
   };
 
-  if (!admin.apps.length && process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && !process.env.FIREBASE_PRIVATE_KEY.includes('DUMMY')) {
+  if (!admin.apps.length && process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && !process.env.FIREBASE_PRIVATE_KEY?.includes('DUMMY')) {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
     });
@@ -130,11 +130,11 @@ app.use('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Brainac API server is running on port ${PORT}`);
-  console.log(`📱 Health check: http://localhost:${PORT}/health`);
-  console.log(`📚 API docs: http://localhost:${PORT}/api`);
-  console.log(`� Auth routes: http://localhost:${PORT}/api/auth`);
-  console.log(`� Subjects routes: http://localhost:${PORT}/api/subjects`);
-  console.log(`💳 Subscription routes: http://localhost:${PORT}/api/subscription`);
+  // console.log(`📱 Health check: http://localhost:${PORT}/health`);
+  // console.log(`📚 API docs: http://localhost:${PORT}/api`);
+  // console.log(`� Auth routes: http://localhost:${PORT}/api/auth`);
+  // console.log(`� Subjects routes: http://localhost:${PORT}/api/subjects`);
+  // console.log(`💳 Subscription routes: http://localhost:${PORT}/api/subscription`);
 });
 
 export default app;

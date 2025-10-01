@@ -3,16 +3,7 @@ import admin from 'firebase-admin';
 import { Request, Response, NextFunction } from 'express';
 import type { AuthRequest, User } from '../types';
 
-// Initialize Firebase Admin SDK
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    }),
-  });
-}
+// Firebase Admin SDK is initialized in index.ts
 
 export const authenticate = async (
   req: AuthRequest,

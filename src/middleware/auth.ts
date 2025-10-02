@@ -36,6 +36,24 @@ export const authenticate = async (
         const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-key';
         const decoded = jwt.verify(token, jwtSecret) as any;
         
+        // Check if it's an admin token
+        if (decoded.isAdmin && decoded.role === 'admin') {
+          // Admin token - create a mock user object
+          req.user = {
+            id: 'admin',
+            email: decoded.email,
+            firstName: 'Admin',
+            lastName: 'User',
+            class: 12, // Admin has access to all classes
+            isEmailVerified: true,
+            subscriptionStatus: 'active',
+            isAdmin: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          } as any;
+          return next();
+        }
+        
         if (!decoded.uid) {
           throw new Error('Token missing uid claim');
         }

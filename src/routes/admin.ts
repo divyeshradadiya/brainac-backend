@@ -4,8 +4,73 @@ import { authenticate } from '../middleware/auth';
 import { db } from '../index';
 import { COLLECTIONS } from '../types/firestore';
 import type { AuthRequest } from '../types';
+import jwt from 'jsonwebtoken';
 
 const router = Router();
+
+// Admin Login Endpoint (No authentication required)
+router.post('/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email and password are required'
+      });
+    }
+
+    // Get admin credentials from environment variables
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+
+    if (!adminEmail || !adminPassword) {
+      console.error('ADMIN_EMAIL or ADMIN_PASSWORD not configured in environment');
+      return res.status(500).json({
+        success: false,
+        error: 'Server configuration error'
+      });
+    }
+
+    // Validate credentials
+    if (email !== adminEmail || password !== adminPassword) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password'
+      });
+    }
+
+    // Generate admin token
+    const jwtSecret = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+    const token = jwt.sign(
+      { 
+        email: adminEmail,
+        role: 'admin',
+        isAdmin: true
+      },
+      jwtSecret,
+      { expiresIn: '24h' }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        token,
+        email: adminEmail,
+        role: 'admin'
+      },
+      message: 'Login successful'
+    });
+
+  } catch (error: any) {
+    console.error('Admin login error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Login failed. Please try again.'
+    });
+  }
+});
 
 // Get dashboard stats
 router.get('/stats', authenticate, async (req: AuthRequest, res: Response) => {

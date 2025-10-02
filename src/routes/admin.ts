@@ -1288,14 +1288,16 @@ router.get('/videos', authenticate, async (req: AuthRequest, res: Response) => {
           }
         }
 
-        // Order by creation date (newest first)
-        videosRef = videosRef.orderBy('createdAt', 'desc');
-
         const snapshot = await videosRef.get();
         let videos = snapshot.docs.map((doc: any) => ({
           id: doc.id,
           ...doc.data()
-        }));
+        })).sort((a: any, b: any) => {
+          // Sort by creation date (newest first)
+          const aDate = a.createdAt?.toDate?.() || new Date(0);
+          const bDate = b.createdAt?.toDate?.() || new Date(0);
+          return bDate.getTime() - aDate.getTime();
+        });
 
         // Get subject details for each video
         const videosWithSubjects = await Promise.all(

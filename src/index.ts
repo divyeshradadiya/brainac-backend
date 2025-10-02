@@ -6,9 +6,9 @@ import { getFirestore } from 'firebase-admin/firestore';
 import morgan from 'morgan';
 
 // Import routes
-import authRoutes from './routes/auth';
-import subjectsRoutes from './routes/subjects';
-import subscriptionRoutes from './routes/subscription';
+import authRoutes from '@/routes/auth';
+import subjectsRoutes from '@/routes/subjects';
+import subscriptionRoutes from '@/routes/subscription';
 
 dotenv.config();
 
@@ -63,6 +63,9 @@ app.use(cors({
   ],
   credentials: true
 }));
+
+// Raw body middleware for webhook signature verification
+app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));  
 

@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import admin from 'firebase-admin';
 import { Request, Response } from 'express';
-import { authenticate } from '../middleware/auth';
+import jwt from 'jsonwebtoken';
+import { authenticate } from '@/middleware/auth';
 import { db } from '../index';
 import {
   UserDocument,
@@ -10,8 +11,8 @@ import {
   COLLECTIONS,
   createUserDocument,
   createSubscriptionHistoryDocument
-} from '../types/firestore';
-import type { AuthRequest } from '../types';
+} from '@/types/firestore';
+import type { AuthRequest } from '@/types';
 
 const router = Router();
 
@@ -81,8 +82,16 @@ router.post('/register', async (req: Request, res: Response) => {
       await db.collection(COLLECTIONS.SUBSCRIPTION_HISTORY).add(subscriptionHistoryData);
     }
 
-    // Create custom token for frontend (keeping this for backward compatibility)
-    const customToken = await admin.auth().createCustomToken(userRecord.uid);
+    // Create JWT token for authentication (instead of Firebase custom token)
+    const jwtPayload = {
+      uid: userRecord.uid,
+      email: userRecord.email,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
+    };
+    
+    const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-key';
+    const customToken = jwt.sign(jwtPayload, jwtSecret);
 
     res.status(201).json({
       success: true,
@@ -133,8 +142,16 @@ router.post('/login', async (req: Request, res: Response) => {
       throw error;
     }
 
-    // Create custom token for authentication
-    const customToken = await admin.auth().createCustomToken(userRecord.uid);
+    // Create JWT token for authentication (instead of Firebase custom token)
+    const jwtPayload = {
+      uid: userRecord.uid,
+      email: userRecord.email,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
+    };
+    
+    const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-key';
+    const customToken = jwt.sign(jwtPayload, jwtSecret);
 
     // Get user data from Firestore
     let userData: UserDocument | null = null;

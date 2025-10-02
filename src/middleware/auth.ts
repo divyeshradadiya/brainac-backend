@@ -31,40 +31,30 @@ export const authenticate = async (
       decodedToken = await admin.auth().verifyIdToken(token);
       userRecord = await admin.auth().getUser(decodedToken.uid);
     } catch (idTokenError) {
-      // If ID token verification fails, try to decode as custom token
-      // Custom tokens are JWT tokens signed by our service account
+      // If ID token verification fails, try to verify as our custom JWT
       try {
-        // Verify the custom token by checking if it's a valid JWT
-        const decoded = jwt.decode(token, { complete: true });
+        const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-key';
+        const decoded = jwt.verify(token, jwtSecret) as any;
         
-        if (!decoded || typeof decoded === 'string') {
-          throw new Error('Invalid token format');
-        }
-
-        // Check if the token was issued by our service account
-        const payload = decoded.payload as any;
-        
-        if (!payload.uid) {
+        if (!decoded.uid) {
           throw new Error('Token missing uid claim');
         }
 
         // Get user record from Firebase Auth using the uid from the token
-        userRecord = await admin.auth().getUser(payload.uid);
-        decodedToken = { uid: payload.uid };
+        userRecord = await admin.auth().getUser(decoded.uid);
+        decodedToken = { uid: decoded.uid };
         
       } catch (customTokenError) {
         console.error('Token verification failed:', {
           idTokenError: idTokenError instanceof Error ? idTokenError.message : 'ID token verification failed',
-          customTokenError: customTokenError instanceof Error ? customTokenError.message : 'Custom token verification failed'
+          customTokenError: customTokenError instanceof Error ? customTokenError.message : 'Custom JWT verification failed'
         });
         return res.status(401).json({
           success: false,
           error: 'Invalid token.',
         });
       }
-    }
-    
-    // Get user data from Firestore
+    }    // Get user data from Firestore
     let userData: UserDocument | null = null;
     if (db) {
       const userDoc = await db.collection(COLLECTIONS.USERS).doc(decodedToken.uid).get();

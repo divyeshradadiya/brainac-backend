@@ -69,114 +69,155 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 
     const userClass = user.class || 6;
     
-    // Sample data for development when Firestore is not available
-    const sampleSubjects = [
-      {
-        id: `class-${userClass}-mathematics`,
-        name: "Mathematics",
-        icon: "📐",
-        color: "from-primary to-secondary",
-        bgColor: "bg-gradient-to-br from-primary/5 via-secondary/5 to-accent/5",
-        animatedNumbers: ["2", "0", "8", "6", "4", "9", "∑", "π", "∞"],
-        totalUnits: 6,
-        totalChapters: 18,
-        totalExplainers: 54
-      },
-      {
-        id: `class-${userClass}-science`,
-        name: "Science",
-        icon: "🧪",
-        color: "from-secondary to-tertiary",
-        bgColor: "bg-gradient-to-br from-secondary/5 via-tertiary/5 to-accent/5",
-        animatedNumbers: ["H", "O", "C", "N", "6", "2", "O₂", "CO₂", "H₂O"],
-        totalUnits: 5,
-        totalChapters: 15,
-        totalExplainers: 45
-      },
-      {
-        id: `class-${userClass}-english`,
-        name: "English Literature",
-        icon: "📚",
-        color: "from-accent to-warning",
-        bgColor: "bg-gradient-to-br from-accent/5 via-warning/5 to-muted/5",
-        animatedNumbers: ["A", "B", "C", "&", "?", "!", ".", ",", "'"],
-        totalUnits: 5,
-        totalChapters: 15,
-        totalExplainers: 45
-      }
-    ];
-
     try {
       const db = getFirestore();
       
-      // Try to fetch from Firestore first
+      // Get subjects for user's class from Firestore
       const subjectsSnapshot = await db.collection('subjects')
-        .where('classLevel', '==', userClass)
+        .where('grade', '==', userClass)
         .get();
 
-      if (!subjectsSnapshot.empty) {
-        // If Firestore data exists, use it
-        const subjects = [];
-        for (const doc of subjectsSnapshot.docs) {
-          const subjectData = doc.data();
-          
-          // Get units count
-          const unitsSnapshot = await doc.ref.collection('units').get();
-          
-          // Get chapters count
-          const chaptersSnapshot = await doc.ref.collection('chapters').get();
-          
-          // Get explainers count
-          const explainersSnapshot = await doc.ref.collection('explainers').get();
-
-          subjects.push({
-            id: doc.id,
-            name: subjectData.name,
-            icon: subjectData.icon,
-            color: subjectData.color,
-            bgColor: subjectData.bgColor,
-            animatedNumbers: subjectData.animatedNumbers,
-            totalUnits: unitsSnapshot.size,
-            totalChapters: chaptersSnapshot.size,
-            totalExplainers: explainersSnapshot.size
-          });
-        }
-
-        const subscriptionStatus = user.subscriptionStatus || 'trial';
-        
+      if (subjectsSnapshot.empty) {
+        // Return empty subjects if none found for this grade
         return res.json({
           success: true,
           data: {
             class: userClass,
-            subjects,
-            subscriptionStatus,
+            subjects: [],
+            subscriptionStatus: user.subscriptionStatus || 'trial',
             trialEndDate: user.trialEndDate
-          }
+          },
+          message: 'No subjects found for this grade'
         });
       }
+
+      // Transform Firestore subjects to match frontend format
+      const subjects = await Promise.all(
+        subjectsSnapshot.docs.map(async (doc) => {
+          const subjectData = doc.data();
+          
+          // Get units for this subject
+          const unitsSnapshot = await db.collection('units')
+            .where('subjectId', '==', doc.id)
+            .get();
+
+          // Sort units by order
+          const sortedUnits = unitsSnapshot.docs.sort((a, b) => {
+            const aOrder = a.data().order || 0;
+            const bOrder = b.data().order || 0;
+            return aOrder - bOrder;
+          });
+
+          let totalChapters = 0;
+          let totalVideos = 0;
+
+          // Get chapters and videos count
+          for (const unitDoc of sortedUnits) {
+            const chaptersSnapshot = await db.collection('chapters')
+              .where('unitId', '==', unitDoc.id)
+              .get();
+            
+            totalChapters += chaptersSnapshot.size;
+
+            for (const chapterDoc of chaptersSnapshot.docs) {
+              const videosSnapshot = await db.collection('videos')
+                .where('chapterId', '==', chapterDoc.id)
+                .get();
+              
+              totalVideos += videosSnapshot.size;
+            }
+          }
+          
+          return {
+            id: doc.id,
+            name: subjectData.name,
+            description: subjectData.description,
+            icon: subjectData.icon || "📚",
+            color: subjectData.color || "from-primary to-secondary",
+            bgColor: "bg-gradient-to-br from-primary/5 via-secondary/5 to-accent/5",
+            animatedNumbers: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+            totalUnits: unitsSnapshot.size,
+            totalChapters: totalChapters,
+            totalExplainers: totalVideos,
+            videoCount: totalVideos
+          };
+        })
+      );
+
+      res.json({
+        success: true,
+        data: {
+          class: userClass,
+          subjects: subjects,
+          subscriptionStatus: user.subscriptionStatus || 'trial',
+          trialEndDate: user.trialEndDate
+        },
+        message: 'Subjects fetched successfully'
+      });
+
     } catch (firestoreError) {
-      console.log('Firestore not available, using sample data:', firestoreError instanceof Error ? firestoreError.message : 'Unknown error');
+      console.error('Firestore error, falling back to sample data:', firestoreError);
+      
+      // Fallback to sample data if Firestore fails
+      const sampleSubjects = [
+        {
+          id: `class-${userClass}-mathematics`,
+          name: "Mathematics",
+          description: "Learn fundamental math concepts",
+          icon: "📐",
+          color: "from-primary to-secondary",
+          bgColor: "bg-gradient-to-br from-primary/5 via-secondary/5 to-accent/5",
+          animatedNumbers: ["2", "0", "8", "6", "4", "9", "∑", "π", "∞"],
+          totalUnits: 6,
+          totalChapters: 18,
+          totalExplainers: 54,
+          videoCount: 54
+        },
+        {
+          id: `class-${userClass}-science`,
+          name: "Science",
+          description: "Explore the world of science",
+          icon: "🧪",
+          color: "from-secondary to-tertiary",
+          bgColor: "bg-gradient-to-br from-secondary/5 via-tertiary/5 to-accent/5",
+          animatedNumbers: ["H", "O", "C", "N", "6", "2", "O₂", "CO₂", "H₂O"],
+          totalUnits: 5,
+          totalChapters: 15,
+          totalExplainers: 45,
+          videoCount: 45
+        },
+        {
+          id: `class-${userClass}-english`,
+          name: "English Literature",
+          description: "Master language and literature",
+          icon: "📚",
+          color: "from-accent to-warning",
+          bgColor: "bg-gradient-to-br from-accent/5 via-warning/5 to-muted/5",
+          animatedNumbers: ["A", "B", "C", "&", "?", "!", ".", ",", "'"],
+          totalUnits: 5,
+          totalChapters: 15,
+          totalExplainers: 45,
+          videoCount: 45
+        }
+      ];
+
+      res.json({
+        success: true,
+        data: {
+          class: userClass,
+          subjects: sampleSubjects,
+          subscriptionStatus: user.subscriptionStatus || 'trial',
+          trialEndDate: user.trialEndDate
+        },
+        message: 'Fallback subjects data'
+      });
     }
 
-    // Fallback to sample data if Firestore is not available or empty
-    const subscriptionStatus = user.subscriptionStatus || 'trial';
-    
-    return res.json({
-      success: true,
-      data: {
-        class: userClass,
-        subjects: sampleSubjects,
-        subscriptionStatus,
-        trialEndDate: user.trialEndDate
-      },
-      message: 'Using sample data (Firestore not configured)'
-    });
-
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching subjects:', error);
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
-      error: 'Internal server error'
+      error: 'Failed to fetch subjects'
     });
   }
 });
@@ -295,44 +336,103 @@ router.get('/:subjectId', authenticate, async (req: AuthRequest, res: Response) 
         const subjectData = subjectDoc.data();
         
         // Verify user has access to this class
-        if (subjectData?.classLevel !== user.class) {
+        if (subjectData?.grade !== user.class) {
           return res.status(403).json({
             success: false,
             error: 'Access denied for this class'
           });
         }
 
-        // Get units
-        const unitsSnapshot = await subjectDoc.ref.collection('units').orderBy('id').get();
-        const units = unitsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        // Get units for this subject
+        const unitsSnapshot = await db.collection('units')
+          .where('subjectId', '==', subjectId)
+          .get();
 
-        // Get chapters
-        const chaptersSnapshot = await subjectDoc.ref.collection('chapters').orderBy('id').get();
-        const chapters = chaptersSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const units = await Promise.all(
+          unitsSnapshot.docs
+            .sort((a, b) => {
+              const aOrder = a.data().order || 0;
+              const bOrder = b.data().order || 0;
+              return aOrder - bOrder;
+            })
+            .map(async (unitDoc) => {
+            const unitData = unitDoc.data();
+            
+            // Get chapters for this unit
+            const chaptersSnapshot = await db.collection('chapters')
+              .where('unitId', '==', unitDoc.id)
+              .get();
 
-        // Get explainers
-        const explainersSnapshot = await subjectDoc.ref.collection('explainers').get();
-        const explainers = explainersSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+            const chapters = await Promise.all(
+              chaptersSnapshot.docs
+                .sort((a, b) => {
+                  const aOrder = a.data().order || 0;
+                  const bOrder = b.data().order || 0;
+                  return aOrder - bOrder;
+                })
+                .map(async (chapterDoc) => {
+                const chapterData = chapterDoc.data();
+                
+                // Get explainers (videos) for this chapter
+                const explainersSnapshot = await db.collection('videos')
+                  .where('chapterId', '==', chapterDoc.id)
+                  .get();
+
+                const explainers = explainersSnapshot.docs
+                  .sort((a, b) => {
+                    const aOrder = a.data().order || 0;
+                    const bOrder = b.data().order || 0;
+                    return aOrder - bOrder;
+                  })
+                  .map(explainerDoc => ({
+                    id: explainerDoc.id,
+                    ...explainerDoc.data()
+                  }));
+
+                return {
+                  id: chapterDoc.id,
+                  name: chapterData.name,
+                  description: chapterData.description,
+                  unitId: chapterData.unitId,
+                  order: chapterData.order,
+                  totalExplainers: explainers.length,
+                  explainers
+                };
+              })
+            );
+
+            return {
+              id: unitDoc.id,
+              name: unitData.name,
+              description: unitData.description,
+              order: unitData.order,
+              progress: 0, // Calculate based on user progress
+              bgColor: "bg-primary/10",
+              borderColor: "border-primary/20",
+              chapters
+            };
+          })
+        );
 
         return res.json({
           success: true,
           data: {
             subject: {
               id: subjectDoc.id,
-              ...subjectData
+              name: subjectData.name,
+              description: subjectData.description,
+              icon: subjectData.icon || "📚",
+              color: subjectData.color || "from-primary to-secondary",
+              bgColor: "bg-gradient-to-br from-primary/5 via-secondary/5 to-accent/5",
+              animatedNumbers: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+              grade: subjectData.grade
             },
             units,
-            chapters,
-            explainers
+            // Legacy fields for backward compatibility
+            chapters: units.flatMap(unit => unit.chapters),
+            explainers: units.flatMap(unit => 
+              unit.chapters.flatMap(chapter => chapter.explainers)
+            )
           }
         });
       }
@@ -375,7 +475,7 @@ router.get('/all/videos', authenticate, async (req: AuthRequest, res: Response) 
     
     // Fetch all subjects for the user's class
     const subjectsSnapshot = await db.collection('subjects')
-      .where('classLevel', '==', userClass)
+      .where('grade', '==', userClass)
       .get();
 
     if (subjectsSnapshot.empty) {
@@ -387,15 +487,18 @@ router.get('/all/videos', authenticate, async (req: AuthRequest, res: Response) 
 
     const allVideos: any[] = [];
     
-    // Get explainers from all subjects
+    // Get explainers from all subjects through units and chapters
     for (const subjectDoc of subjectsSnapshot.docs) {
-      const explainersSnapshot = await subjectDoc.ref.collection('explainers').get();
+      // Get all videos for this subject (regardless of hierarchy)
+      const videosSnapshot = await db.collection('videos')
+        .where('subjectId', '==', subjectDoc.id)
+        .get();
       
-      explainersSnapshot.docs.forEach(explainerDoc => {
-        const explainerData = explainerDoc.data();
+      videosSnapshot.docs.forEach(videoDoc => {
+        const videoData = videoDoc.data();
         allVideos.push({
-          id: explainerDoc.id,
-          ...explainerData,
+          id: videoDoc.id,
+          ...videoData,
           subjectId: subjectDoc.id,
           subjectName: subjectDoc.data().name
         });
@@ -447,19 +550,28 @@ router.get('/:subjectId/videos', authenticate, async (req: AuthRequest, res: Res
     const subjectData = subjectDoc.data();
     
     // Verify user has access to this class
-    if (subjectData?.classLevel !== user.class) {
+    if (subjectData?.grade !== user.class) {
       return res.status(403).json({
         success: false,
         error: 'Access denied for this class'
       });
     }
 
-    // Get all explainers for this subject
-    const explainersSnapshot = await subjectDoc.ref.collection('explainers').get();
-    const videos = explainersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    // Get all videos for this subject
+    const videosSnapshot = await db.collection('videos')
+      .where('subjectId', '==', subjectId)
+      .get();
+
+    const videos = videosSnapshot.docs
+      .sort((a, b) => {
+        const aOrder = a.data().order || 0;
+        const bOrder = b.data().order || 0;
+        return aOrder - bOrder;
+      })
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
     return res.json({
       success: true,
@@ -497,7 +609,7 @@ router.get('/videos/:videoId', authenticate, async (req: AuthRequest, res: Respo
     
     // Search for the video across all subjects in the user's class
     const subjectsSnapshot = await db.collection('subjects')
-      .where('classLevel', '==', userClass)
+      .where('grade', '==', userClass)
       .get();
 
     if (subjectsSnapshot.empty) {
@@ -511,16 +623,20 @@ router.get('/videos/:videoId', authenticate, async (req: AuthRequest, res: Respo
     let subjectInfo = null;
 
     // Search for the video in all subjects
-    for (const subjectDoc of subjectsSnapshot.docs) {
-      const videoDoc = await subjectDoc.ref.collection('explainers').doc(videoId).get();
+    const videoDoc = await db.collection('videos').doc(videoId).get();
+    
+    if (videoDoc.exists) {
+      const video = videoDoc.data();
       
-      if (videoDoc.exists) {
-        videoData = videoDoc.data();
+      // Verify this video belongs to a subject in user's class
+      const subjectDoc = await db.collection('subjects').doc(video?.subjectId).get();
+      
+      if (subjectDoc.exists && subjectDoc.data()?.grade === userClass) {
+        videoData = video;
         subjectInfo = {
           id: subjectDoc.id,
-          name: subjectDoc.data().name
+          name: subjectDoc.data()?.name
         };
-        break;
       }
     }
 

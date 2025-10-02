@@ -39,6 +39,61 @@ export interface PaymentDocument {
   updatedAt: string;
 }
 
+export interface SubjectDocument {
+  id: string;
+  name: string;
+  description: string;
+  grade: number; // 6-10
+  icon: string;
+  color: string;
+  videoCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UnitDocument {
+  id: string;
+  name: string;
+  description: string;
+  subjectId: string;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChapterDocument {
+  id: string;
+  name: string;
+  description: string;
+  unitId: string;
+  subjectId: string;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VideoDocument {
+  id: string;
+  title: string;
+  description: string;
+  subject: string;
+  subjectId: string;
+  unitId: string;
+  chapterId: string;
+  grade: number;
+  duration: string;
+  videoUrl: string;
+  thumbnail: string;
+  views: number;
+  likes: number;
+  order: number;
+  category?: string;
+  tags?: string[];
+  difficulty?: 'beginner' | 'intermediate' | 'advanced';
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SubscriptionHistoryDocument {
   id: string;
   userId: string;
@@ -56,6 +111,10 @@ export const COLLECTIONS = {
   USERS: 'users',
   PAYMENTS: 'payments',
   SUBSCRIPTION_HISTORY: 'subscriptionHistory',
+  SUBJECTS: 'subjects',
+  UNITS: 'units',
+  CHAPTERS: 'chapters',
+  VIDEOS: 'videos',
 } as const;
 
 // Helper functions for Firestore operations

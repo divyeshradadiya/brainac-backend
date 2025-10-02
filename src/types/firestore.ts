@@ -32,6 +32,9 @@ export interface PaymentDocument {
   amount: number; // in rupees
   currency: string;
   status: 'pending' | 'completed' | 'failed' | 'refunded';
+  paymentMethod?: string;
+  refundReason?: string;
+  refundedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

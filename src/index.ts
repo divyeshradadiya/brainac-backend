@@ -6,9 +6,10 @@ import { getFirestore } from 'firebase-admin/firestore';
 import morgan from 'morgan';
 
 // Import routes
-import authRoutes from '@/routes/auth';
+import authRoutes from '@/routes/auth'
 import subjectsRoutes from '@/routes/subjects';
 import subscriptionRoutes from '@/routes/subscription';
+import adminRoutes from '@/routes/admin';
 
 dotenv.config();
 
@@ -82,6 +83,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/subjects', subjectsRoutes);
 app.use('/api/subscription', subscriptionRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

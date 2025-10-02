@@ -262,7 +262,7 @@ router.get('/status', authenticate, async (req: AuthRequest, res: Response) => {
       success: true,
       data: {
         subscriptionStatus: user.subscriptionStatus,
-        subscriptionPlan: user.subscriptionStatus === 'active' ? 'active_plan' : undefined,
+        subscriptionPlan: user.subscriptionPlan,
         trialEndDate: user.trialEndDate,
         subscriptionEndDate: user.subscriptionStatus === 'active' ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : undefined,
         daysRemaining,

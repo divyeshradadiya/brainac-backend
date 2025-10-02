@@ -10,6 +10,7 @@ export interface User {
   avatar?: string;
   isEmailVerified: boolean;
   subscriptionStatus: 'trial' | 'active' | 'expired';
+  subscriptionPlan?: string; // Plan ID like 'monthly', 'quarterly', 'yearly'
   trialStartDate?: Date;
   trialEndDate?: Date;
   subscriptionEndDate?: Date;

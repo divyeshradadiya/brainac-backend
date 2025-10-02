@@ -56,20 +56,17 @@ router.get('/sample', (req, res) => {
 });
 
 // Get all subjects for user's class from Firestore
-router.get('/', async (req: AuthRequest, res: Response) => {
+router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    // For development - bypass authentication and use default user
-    const defaultUser = {
-      id: 'dev-user',
-      email: 'dev@example.com',
-      firstName: 'Dev',
-      lastName: 'User',
-      class: 7,
-      subscriptionStatus: 'trial' as const,
-      trialEndDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    };
+    const user = req.user;
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
 
-    const user = defaultUser; // req.user || defaultUser;
     const userClass = user.class || 6;
     
     // Sample data for development when Firestore is not available
@@ -185,20 +182,17 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 });
 
 // Get specific subject with units and chapters
-router.get('/:subjectId', async (req: AuthRequest, res: Response) => {
+router.get('/:subjectId', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    // For development - bypass authentication and use default user
-    const defaultUser = {
-      id: 'dev-user',
-      email: 'dev@example.com',
-      firstName: 'Dev',
-      lastName: 'User',
-      class: 7,
-      subscriptionStatus: 'trial' as const,
-      trialEndDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    };
+    const user = req.user;
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not authenticated'
+      });
+    }
 
-    const user = defaultUser; // req.user || defaultUser;
     const { subjectId } = req.params;
     const userClass = user.class || 6;
     

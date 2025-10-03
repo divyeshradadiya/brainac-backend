@@ -65,11 +65,23 @@ export const authenticate = async (
       } catch (customTokenError) {
         console.error('Token verification failed:', {
           idTokenError: idTokenError instanceof Error ? idTokenError.message : 'ID token verification failed',
-          customTokenError: customTokenError instanceof Error ? customTokenError.message : 'Custom JWT verification failed'
+          customTokenError: customTokenError instanceof Error ? customTokenError.message : 'Custom JWT verification failed',
+          tokenPreview: token.substring(0, 50) + '...' // Log first 50 chars for debugging
         });
+        
+        // Check if it's an expired token specifically
+        if (customTokenError instanceof Error && customTokenError.message.includes('expired')) {
+          return res.status(401).json({
+            success: false,
+            error: 'Token expired. Please sign in again.',
+            code: 'TOKEN_EXPIRED'
+          });
+        }
+        
         return res.status(401).json({
           success: false,
-          error: 'Invalid token.',
+          error: 'Invalid token. Please sign in again.',
+          code: 'INVALID_TOKEN'
         });
       }
     }    // Get user data from Firestore
@@ -112,9 +124,30 @@ export const authenticate = async (
     next();
   } catch (error) {
     console.error('Authentication error:', error);
+    
+    // Check if it's a specific Firebase error
+    if (error instanceof Error) {
+      if (error.message.includes('expired') || error.message.includes('TOKEN_EXPIRED')) {
+        return res.status(401).json({
+          success: false,
+          error: 'Authentication token has expired. Please sign in again.',
+          code: 'TOKEN_EXPIRED'
+        });
+      }
+      
+      if (error.message.includes('kid') || error.message.includes('malformed')) {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid authentication token. Please sign in again.',
+          code: 'INVALID_TOKEN'
+        });
+      }
+    }
+    
     res.status(401).json({
       success: false,
-      error: 'Invalid token.',
+      error: 'Authentication failed. Please sign in again.',
+      code: 'AUTH_FAILED'
     });
   }
 };

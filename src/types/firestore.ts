@@ -7,10 +7,12 @@ export interface UserDocument {
   lastName: string;
   displayName: string;
   class: number; // 6-10
-  subscriptionStatus: 'trial' | 'active' | 'expired' | 'cancelled';
+  subscriptionStatus: 'trial' | 'active' | 'expired' | 'cancelled' | 'paused';
   subscriptionPlan?: 'monthly' | 'quarterly' | 'yearly';
   subscriptionStartDate?: string;
   subscriptionEndDate?: string;
+  razorpaySubscriptionId?: string; // Razorpay subscription ID
+  cancelledAt?: string;
   trialStartDate?: string;
   trialEndDate?: string;
   createdAt: string;
@@ -98,10 +100,11 @@ export interface SubscriptionHistoryDocument {
   id: string;
   userId: string;
   planId: 'monthly' | 'quarterly' | 'yearly';
-  status: 'trial' | 'active' | 'expired' | 'cancelled';
+  status: 'trial' | 'active' | 'expired' | 'cancelled' | 'paused';
   startDate: string;
   endDate?: string;
   paymentId?: string;
+  razorpaySubscriptionId?: string; // Razorpay subscription ID
   createdAt: string;
   updatedAt: string;
 }

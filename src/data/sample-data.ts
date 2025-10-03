@@ -399,6 +399,8 @@ export const subscriptionPlans = [
     price: 299,
     currency: "INR",
     duration: "1 month",
+    billingPeriod: "monthly",
+    billingInterval: 1,
     originalPrice: 399,
     discount: "25% OFF",
     popular: false,
@@ -407,7 +409,8 @@ export const subscriptionPlans = [
       "HD video content",
       "Practice exercises",
       "Basic progress tracking",
-      "Email support"
+      "Email support",
+      "Cancel anytime"
     ]
   },
   {
@@ -416,6 +419,8 @@ export const subscriptionPlans = [
     price: 799,
     currency: "INR",
     duration: "3 months",
+    billingPeriod: "monthly",
+    billingInterval: 3,
     originalPrice: 1197,
     discount: "33% OFF",
     popular: true,
@@ -425,7 +430,8 @@ export const subscriptionPlans = [
       "Advanced analytics",
       "Priority support",
       "Study reminders",
-      "Parent reports"
+      "Parent reports",
+      "Cancel anytime"
     ]
   },
   {
@@ -434,6 +440,8 @@ export const subscriptionPlans = [
     price: 2499,
     currency: "INR",
     duration: "12 months",
+    billingPeriod: "yearly",
+    billingInterval: 1,
     originalPrice: 4788,
     discount: "48% OFF",
     popular: false,
@@ -443,7 +451,8 @@ export const subscriptionPlans = [
       "1-on-1 doubt sessions",
       "Performance certificates",
       "Career guidance",
-      "Free study materials"
+      "Free study materials",
+      "Cancel anytime"
     ]
   }
 ];

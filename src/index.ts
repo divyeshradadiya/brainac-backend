@@ -8,7 +8,7 @@ import morgan from 'morgan';
 // Import routes
 import authRoutes from '@/routes/auth'
 import subjectsRoutes from '@/routes/subjects';
-import subscriptionRoutes from '@/routes/subscription';
+import { subscriptionRoutes } from '@/routes/subscription';
 import adminRoutes from '@/routes/admin';
 
 dotenv.config();

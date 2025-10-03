@@ -9,11 +9,13 @@ export interface User {
   class: number; // 5-10
   avatar?: string;
   isEmailVerified: boolean;
-  subscriptionStatus: 'trial' | 'active' | 'expired';
+  subscriptionStatus: 'trial' | 'active' | 'expired' | 'cancelled' | 'paused';
   subscriptionPlan?: string; // Plan ID like 'monthly', 'quarterly', 'yearly'
+  razorpaySubscriptionId?: string; // Razorpay subscription ID
   trialStartDate?: Date;
   trialEndDate?: Date;
   subscriptionEndDate?: Date;
+  subscriptionStartDate?: Date;
   createdAt: Date;
   updatedAt: Date;
 }

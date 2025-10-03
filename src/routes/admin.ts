@@ -2182,4 +2182,350 @@ router.post('/payments/:paymentId/refund', authenticate, async (req: AuthRequest
   }
 });
 
+// Subscription Management Endpoints
+
+// Get all subscriptions with filtering and pagination
+router.get('/subscriptions', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
+    const { page = 1, limit = 20, status, plan, search } = req.query;
+
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    // Get users with subscriptions
+    let usersRef: any = db.collection(COLLECTIONS.USERS);
+
+    // Apply status filter
+    if (status && status !== 'all') {
+      usersRef = usersRef.where('subscriptionStatus', '==', status);
+    }
+
+    // Apply plan filter
+    if (plan && plan !== 'all') {
+      usersRef = usersRef.where('subscriptionPlan', '==', plan);
+    }
+
+    const snapshot = await usersRef.get();
+    let subscriptions = snapshot.docs
+      .map((doc: any) => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      .filter((user: any) => user.subscriptionStatus && user.subscriptionStatus !== 'trial');
+
+    // Apply search filter
+    if (search) {
+      const searchTerm = (search as string).toLowerCase();
+      subscriptions = subscriptions.filter((user: any) =>
+        `${user.firstName} ${user.lastName}`.toLowerCase().includes(searchTerm) ||
+        user.email.toLowerCase().includes(searchTerm) ||
+        user.razorpaySubscriptionId?.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    // Calculate pagination
+    const totalSubscriptions = subscriptions.length;
+    const pageNum = Math.max(1, parseInt(page as string) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
+    const startIndex = (pageNum - 1) * limitNum;
+    const endIndex = startIndex + limitNum;
+    const paginatedSubscriptions = subscriptions.slice(startIndex, endIndex);
+
+    // Enhance with subscription details
+    const enhancedSubscriptions = paginatedSubscriptions.map((user: any) => ({
+      id: user.id,
+      userId: user.id,
+      userName: `${user.firstName} ${user.lastName}`,
+      userEmail: user.email,
+      subscriptionStatus: user.subscriptionStatus,
+      subscriptionPlan: user.subscriptionPlan,
+      subscriptionStartDate: user.subscriptionStartDate,
+      subscriptionEndDate: user.subscriptionEndDate,
+      razorpaySubscriptionId: user.razorpaySubscriptionId,
+      cancelledAt: user.cancelledAt,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        subscriptions: enhancedSubscriptions,
+        pagination: {
+          total_count: totalSubscriptions,
+          total_pages: Math.ceil(totalSubscriptions / limitNum),
+          current_page: pageNum,
+          per_page: limitNum
+        }
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Error fetching subscriptions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch subscriptions'
+    });
+  }
+});
+
+// Get subscription analytics
+router.get('/subscriptions/analytics', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    // Get all users with subscription data
+    const usersSnapshot = await db.collection(COLLECTIONS.USERS).get();
+    const users = usersSnapshot.docs.map(doc => doc.data());
+
+    // Calculate subscription metrics
+    const activeSubscriptions = users.filter(user => user.subscriptionStatus === 'active').length;
+    const cancelledSubscriptions = users.filter(user => user.subscriptionStatus === 'cancelled').length;
+    const expiredSubscriptions = users.filter(user => user.subscriptionStatus === 'expired').length;
+
+    // Plan distribution
+    const planDistribution = {
+      monthly: users.filter(user => user.subscriptionPlan === 'monthly' && user.subscriptionStatus === 'active').length,
+      quarterly: users.filter(user => user.subscriptionPlan === 'quarterly' && user.subscriptionStatus === 'active').length,
+      yearly: users.filter(user => user.subscriptionPlan === 'yearly' && user.subscriptionStatus === 'active').length
+    };
+
+    // Calculate MRR (Monthly Recurring Revenue)
+    const planPrices = { monthly: 499, quarterly: 1299, yearly: 4999 }; // in rupees
+    const mrr = (planDistribution.monthly * planPrices.monthly) + 
+                (planDistribution.quarterly * planPrices.quarterly / 3) + 
+                (planDistribution.yearly * planPrices.yearly / 12);
+
+    // Churn rate calculation (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentCancellations = users.filter(user => {
+      if (!user.cancelledAt) return false;
+      const cancelDate = new Date(user.cancelledAt);
+      return cancelDate >= thirtyDaysAgo;
+    }).length;
+
+    const churnRate = activeSubscriptions > 0 ? (recentCancellations / activeSubscriptions) * 100 : 0;
+
+    // Growth metrics (compare last 30 days with previous 30 days)
+    const sixtyDaysAgo = new Date();
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+    const newSubscriptions30Days = users.filter(user => {
+      if (!user.subscriptionStartDate) return false;
+      const startDate = new Date(user.subscriptionStartDate);
+      return startDate >= thirtyDaysAgo && user.subscriptionStatus === 'active';
+    }).length;
+
+    res.json({
+      success: true,
+      data: {
+        overview: {
+          activeSubscriptions,
+          cancelledSubscriptions,
+          expiredSubscriptions,
+          totalSubscriptions: activeSubscriptions + cancelledSubscriptions + expiredSubscriptions
+        },
+        revenue: {
+          mrr: Math.round(mrr),
+          currency: 'INR'
+        },
+        planDistribution,
+        metrics: {
+          churnRate: Math.round(churnRate * 100) / 100,
+          newSubscriptions30Days,
+          growthRate: 0 // Can be calculated with more historical data
+        }
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Error fetching subscription analytics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch analytics'
+    });
+  }
+});
+
+// Cancel a subscription (admin action)
+router.post('/subscriptions/:subscriptionId/cancel', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
+    const { subscriptionId } = req.params;
+    const { reason } = req.body;
+
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    // Find user by razorpaySubscriptionId
+    const usersSnapshot = await db.collection(COLLECTIONS.USERS)
+      .where('razorpaySubscriptionId', '==', subscriptionId)
+      .get();
+
+    if (usersSnapshot.empty) {
+      return res.status(404).json({
+        success: false,
+        error: 'Subscription not found'
+      });
+    }
+
+    const userDoc = usersSnapshot.docs[0];
+    const userData = userDoc.data();
+
+    // Update subscription status
+    await userDoc.ref.update({
+      subscriptionStatus: 'cancelled',
+      cancelledAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      adminCancelReason: reason || 'Cancelled by admin'
+    });
+
+    // Create subscription history entry
+    const subscriptionHistoryData = {
+      userId: userDoc.id,
+      planId: userData.subscriptionPlan,
+      status: 'cancelled',
+      startDate: userData.subscriptionStartDate,
+      endDate: new Date().toISOString(),
+      razorpaySubscriptionId: subscriptionId,
+      cancelReason: reason || 'Cancelled by admin',
+      cancelledBy: 'admin',
+      createdAt: new Date().toISOString()
+    };
+
+    await db.collection(COLLECTIONS.SUBSCRIPTION_HISTORY).add(subscriptionHistoryData);
+
+    res.json({
+      success: true,
+      message: 'Subscription cancelled successfully',
+      data: {
+        subscriptionId,
+        status: 'cancelled',
+        cancelledAt: new Date().toISOString()
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Error cancelling subscription:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to cancel subscription'
+    });
+  }
+});
+
+// Get subscription details
+router.get('/subscriptions/:subscriptionId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
+    const { subscriptionId } = req.params;
+
+    if (!db) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not available'
+      });
+    }
+
+    // Find user by razorpaySubscriptionId
+    const usersSnapshot = await db.collection(COLLECTIONS.USERS)
+      .where('razorpaySubscriptionId', '==', subscriptionId)
+      .get();
+
+    if (usersSnapshot.empty) {
+      return res.status(404).json({
+        success: false,
+        error: 'Subscription not found'
+      });
+    }
+
+    const userDoc = usersSnapshot.docs[0];
+    const userData = userDoc.data();
+
+    // Get subscription history
+    const historySnapshot = await db.collection(COLLECTIONS.SUBSCRIPTION_HISTORY)
+      .where('razorpaySubscriptionId', '==', subscriptionId)
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    const history = historySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    const subscriptionDetails = {
+      id: subscriptionId,
+      userId: userDoc.id,
+      userName: `${userData.firstName} ${userData.lastName}`,
+      userEmail: userData.email,
+      subscriptionStatus: userData.subscriptionStatus,
+      subscriptionPlan: userData.subscriptionPlan,
+      subscriptionStartDate: userData.subscriptionStartDate,
+      subscriptionEndDate: userData.subscriptionEndDate,
+      razorpaySubscriptionId: userData.razorpaySubscriptionId,
+      cancelledAt: userData.cancelledAt,
+      createdAt: userData.createdAt,
+      updatedAt: userData.updatedAt,
+      history
+    };
+
+    res.json({
+      success: true,
+      data: subscriptionDetails
+    });
+
+  } catch (error: any) {
+    console.error('Error fetching subscription details:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch subscription details'
+    });
+  }
+});
+
 export default router;
